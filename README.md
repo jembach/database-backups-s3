@@ -33,6 +33,7 @@ AWS_S3_BUCKET=<S3_BUCKET>
 AWS_S3_REGION=<S3_REGION>
 AWS_S3_ENDPOINT=<S3_ENDPOINT>
 DATABASES="mysql://user:password@host:port/database,postgresql://user:password@host:port/database,mongodb://user:password@host:port"
+ENCRYPTION_KEY=<ENCRYPTION_KEY>
 ```
 
 ### Environment variables
@@ -47,3 +48,4 @@ DATABASES="mysql://user:password@host:port/database,postgresql://user:password@h
 | `AWS_S3_BUCKET`         | [Name of the S3 bucket](https://docs.aws.amazon.com/AmazonS3/latest/dev/Welcome.html). | No | |
 | `AWS_S3_REGION`         | [Region of the S3 bucket](https://docs.aws.amazon.com/general/latest/gr/rande.html). | No | |
 | `AWS_S3_ENDPOINT`       | [Endpoint for the S3 service](https://docs.aws.amazon.com/general/latest/gr/s3.html). | No | |
+| `ENCRYPTION_KEY`       | A secret to encrypt the backups. If not set backups will be unencrypted. | Yes | |
