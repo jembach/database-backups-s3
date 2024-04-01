@@ -1,19 +1,19 @@
-require('dotenv').config();
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
+require("dotenv").config();
+const util = require("util");
+const exec = util.promisify(require("child_process").exec);
 const s3 = require("@aws-sdk/client-s3");
-const fs = require('fs');
+const fs = require("fs");
 const cron = require("cron");
 
 function loadConfig() {
   const requiredEnvars = [
-    'AWS_ACCESS_KEY_ID',
-    'AWS_SECRET_ACCESS_KEY',
-    'AWS_S3_REGION',
-    'AWS_S3_ENDPOINT',
-    'AWS_S3_BUCKET'
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_S3_REGION",
+    "AWS_S3_ENDPOINT",
+    "AWS_S3_BUCKET",
   ];
-  
+
   for (const key of requiredEnvars) {
     if (!process.env[key]) {
       throw new Error(`Environment variable ${key} is required`);
@@ -26,11 +26,12 @@ function loadConfig() {
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
       region: process.env.AWS_S3_REGION,
       endpoint: process.env.AWS_S3_ENDPOINT,
-      s3_bucket: process.env.AWS_S3_BUCKET
+      s3_bucket: process.env.AWS_S3_BUCKET,
     },
     databases: process.env.DATABASES ? process.env.DATABASES.split(",") : [],
-    run_on_startup: process.env.RUN_ON_STARTUP === 'true' ? true : false,
+    run_on_startup: process.env.RUN_ON_STARTUP === "true" ? true : false,
     cron: process.env.CRON,
+    encryptionKey: process.env.ENCRYPTION_KEY || null,
   };
 }
 
@@ -55,30 +56,34 @@ async function processBackup() {
     const dbUser = url.username;
     const dbPassword = url.password;
     const dbPort = url.port;
-  
+
     const date = new Date();
     const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    const hh = String(date.getHours()).padStart(2, '0');
-    const min = String(date.getMinutes()).padStart(2, '0');
-    const ss = String(date.getSeconds()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const min = String(date.getMinutes()).padStart(2, "0");
+    const ss = String(date.getSeconds()).padStart(2, "0");
     const timestamp = `${yyyy}-${mm}-${dd}_${hh}:${min}:${ss}`;
-    const filename = `backup-${dbType}-${timestamp}-${dbName}-${dbHostname}.tar.gz`;
-    const filepath = `/tmp/${filename}`;
-
-    console.log(`\n[${databaseIteration}/${totalDatabases}] ${dbType}/${dbName} Backup in progress...`);
+    const filename = `${timestamp}.${dbType}`;
+    const s3Key = `${dbHostname}/${
+      dbName ? `${dbName}/` : ""
+    }${timestamp}/${filename}`;
+    const baseDir = `/tmp`;
+    console.log(
+      `\n[${databaseIteration}/${totalDatabases}] ${dbType}/${dbName} Backup in progress...`
+    );
 
     let dumpCommand;
     switch (dbType) {
-      case 'postgresql':
-        dumpCommand = `pg_dump "${databaseURI}" -F c > "${filepath}.dump"`;
+      case "postgresql":
+        dumpCommand = `pg_dump "${databaseURI}" -F c > "${baseDir}/${filename}.dump"`;
         break;
-      case 'mongodb':
-        dumpCommand = `mongodump --uri="${databaseURI}" --archive="${filepath}.dump"`;
+      case "mongodb":
+        dumpCommand = `mongodump --uri="${databaseURI}" --archive="${baseDir}/${filename}.dump"`;
         break;
-      case 'mysql':
-        dumpCommand = `mysqldump -u ${dbUser} -p${dbPassword} -h ${dbHostname} -P ${dbPort} ${dbName} > "${filepath}.dump"`;
+      case "mysql":
+        dumpCommand = `mysqldump -u ${dbUser} -p${dbPassword} -h ${dbHostname} -P ${dbPort} ${dbName} > "${baseDir}/${filename}.dump"`;
         break;
       default:
         console.log(`Unknown database type: ${dbType}`);
@@ -90,24 +95,38 @@ async function processBackup() {
       await exec(dumpCommand);
 
       // 2. Compress the dump file
-      await exec(`tar -czvf ${filepath} ${filepath}.dump`);
+      await exec(
+        `tar -czvf ${baseDir}/${filename}.tar.gz -C /tmp ${baseDir}/${filename}.dump`
+      );
+
+      if (config.encryptionKey) {
+        await exec(
+          `gpg --batch --passphrase "${config.encryptionKey}" -c ${baseDir}/${filename}.tar.gz`
+        );
+      }
 
       // 3. Read the compressed file
-      const data = fs.readFileSync(filepath);
+      const data = fs.readFileSync(
+        `${baseDir}/${filename}.tar.gz${config.encryptionKey ? ".gpg" : ""}`
+      );
 
       // 4. Upload to S3
       const params = {
         Bucket: config.aws.s3_bucket,
-        Key: filename,
-        Body: data
+        Key: `${s3Key}.tar.gz${config.encryptionKey ? ".gpg" : ""}`,
+        Body: data,
       };
 
       const putCommand = new s3.PutObjectCommand(params);
       await s3Client.send(putCommand);
-      
-      console.log(`✓ Successfully uploaded db backup for database ${dbType} ${dbName} ${dbHostname}.`);
+
+      console.log(
+        `✓ Successfully uploaded db backup for database ${dbType} ${dbName} ${dbHostname}.`
+      );
     } catch (error) {
-      console.error(`An error occurred while processing the database ${dbType} ${dbName}, host: ${dbHostname}): ${error}`);
+      console.error(
+        `An error occurred while processing the database ${dbType} ${dbName}, host: ${dbHostname}): ${error}`
+      );
     }
   }
 }
@@ -116,11 +135,11 @@ if (config.cron) {
   const CronJob = cron.CronJob;
   const job = new CronJob(config.cron, processBackup);
   job.start();
-  
+
   console.log(`Backups configured on Cron job schedule: ${config.cron}`);
 }
 
 if (config.run_on_startup) {
-  console.log("run_on_startup enabled, backing up now...")
+  console.log("run_on_startup enabled, backing up now...");
   processBackup();
 }
