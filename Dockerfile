@@ -1,5 +1,5 @@
 # Build Stage
-FROM alpine:3.14 AS build
+FROM alpine:3.19 AS build
 
 WORKDIR /root
 
@@ -11,7 +11,7 @@ RUN npm install
 RUN npm prune --production
 
 # Final Stage
-FROM alpine:3.14
+FROM alpine:3.19
 
 ENV ENABLE_ALPINE_PRIVATE_NETWORKING="true"
 
