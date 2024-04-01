@@ -64,7 +64,7 @@ async function processBackup() {
     const hh = String(date.getHours()).padStart(2, "0");
     const min = String(date.getMinutes()).padStart(2, "0");
     const ss = String(date.getSeconds()).padStart(2, "0");
-    const timestamp = `${yyyy}-${mm}-${dd}_${hh}:${min}:${ss}`;
+    const timestamp = `${yyyy}-${mm}-${dd}_${hh}_${min}_${ss}`;
     const filename = `${timestamp}.${dbType}`;
     const s3Key = `${dbHostname}/${
       dbName ? `${dbName}/` : ""
@@ -96,7 +96,7 @@ async function processBackup() {
 
       // 2. Compress the dump file
       await exec(
-        `tar -czvf ${baseDir}/${filename}.tar.gz -C /tmp ${baseDir}/${filename}.dump`
+        `tar -czvf ${baseDir}/${filename}.tar.gz -C ${baseDir} ${filename}.dump`
       );
 
       if (config.encryptionKey) {
